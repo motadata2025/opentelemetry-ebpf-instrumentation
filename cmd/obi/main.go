@@ -21,6 +21,7 @@ import (
 	otelsdk "go.opentelemetry.io/otel/sdk"
 
 	"go.opentelemetry.io/obi/cmd/obi/internal/configcmd"
+	"go.opentelemetry.io/obi/cmd/obi/internal/hostgroup"
 	"go.opentelemetry.io/obi/internal/config/convert"
 	"go.opentelemetry.io/obi/internal/config/schema"
 	"go.opentelemetry.io/obi/pkg/buildinfo"
@@ -134,6 +135,8 @@ func main() {
 	slog.Info("OpenTelemetry eBPF Instrumentation", "Version", buildinfo.Version, "Revision", buildinfo.Revision, "OpenTelemetry SDK Version", otelsdk.Version())
 	slog.Info("configuration loaded", "version", configVersion)
 
+	hostGroup := hostgroup.Load()
+
 	if err := obi.CheckOSSupport(); err != nil {
 		slog.Error("can't start OpenTelemetry eBPF Instrumentation", "error", err)
 		os.Exit(-1)
@@ -168,7 +171,7 @@ func main() {
 	// child process isn't found.
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	if err := instrumenter.Run(ctx, config); err != nil {
+	if err := instrumenter.Run(ctx, config, hostgroup.WithResourceAttribute(hostGroup)); err != nil {
 		slog.Error("OpenTelemetry eBPF Instrumentation ran with errors", "error", err)
 		os.Exit(-1)
 	}
