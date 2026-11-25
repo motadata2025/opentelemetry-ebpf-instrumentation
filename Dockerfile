@@ -87,10 +87,10 @@ LABEL maintainer="The OpenTelemetry Authors"
 
 WORKDIR /
 
-COPY --from=builder /src/bin/obi .
+COPY --from=builder /src/bin/motadata-ebpf-agent .
 COPY LICENSE NOTICE ./
 COPY NOTICES ./NOTICES
 
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 
-ENTRYPOINT [ "/obi" ]
+ENTRYPOINT [ "/motadata-ebpf-agent" ]

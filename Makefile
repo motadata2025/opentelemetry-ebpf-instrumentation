@@ -3,6 +3,8 @@
 CMD ?= obi
 JAVA_AGENT ?= obi-java-agent.jar
 MAIN_GO_FILE ?= cmd/$(CMD)/main.go
+# BIN_NAME: name of the release binary built by 'compile'. Debug and test builds keep $(CMD).
+BIN_NAME ?= motadata-ebpf-agent
 
 CACHE_CMD ?= k8s-cache
 CACHE_MAIN_GO_FILE ?= cmd/$(CACHE_CMD)/main.go
@@ -324,9 +326,12 @@ build: docker-generate verify compile
 all: docker-generate notices-update build
 
 .PHONY: compile compile-cache
+# Build as $(CMD) and rename in a separate step: the Motadata manager kills any process whose
+# command line contains $(BIN_NAME), which would include a long-running 'go build -o bin/$(BIN_NAME)'.
 compile:
 	@echo "### Compiling OpenTelemetry eBPF Instrumentation"
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-X '$(BUILDINFO_PKG).Version=$(RELEASE_VERSION)' -X '$(BUILDINFO_PKG).Revision=$(RELEASE_REVISION)'" -a -o bin/$(CMD) $(MAIN_GO_FILE)
+	mv bin/$(CMD) bin/$(BIN_NAME)
 compile-cache:
 	@echo "### Compiling OpenTelemetry eBPF Instrumentation K8s cache"
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-X '$(BUILDINFO_PKG).Version=$(RELEASE_VERSION)' -X '$(BUILDINFO_PKG).Revision=$(RELEASE_REVISION)'" -a -o bin/$(CACHE_CMD) $(CACHE_MAIN_GO_FILE)
@@ -665,7 +670,7 @@ artifact: docker-generate java-docker-build compile
 	@echo "### Packing generated artifact for $(GOOS)/$(GOARCH)"
 	@STAGING_DIR=$$(mktemp -d 2>/dev/null || mktemp -d -t obi.XXXXXX); \
 	trap "rm -rf $$STAGING_DIR" EXIT; \
-	cp ./bin/$(CMD) $$STAGING_DIR/; \
+	cp ./bin/$(BIN_NAME) $$STAGING_DIR/; \
 	cp LICENSE $$STAGING_DIR/; \
 	cp NOTICE $$STAGING_DIR/; \
 	mkdir -p $$STAGING_DIR/NOTICES; \
@@ -673,7 +678,7 @@ artifact: docker-generate java-docker-build compile
 	if [ -d NOTICES/java ]; then cp -R NOTICES/java $$STAGING_DIR/NOTICES/; fi; \
 	if [ ! -d NOTICES/$(GOARCH) ]; then echo "ERROR: NOTICES/$(GOARCH) missing; run 'make go-notices-update'"; exit 1; fi; \
 	cp -R NOTICES/$(GOARCH)/. $$STAGING_DIR/NOTICES/; \
-	tar -C $$STAGING_DIR -czf bin/obi-$(RELEASE_VERSION)-$(GOOS)-$(GOARCH).tar.gz $(CMD) LICENSE NOTICE NOTICES
+	tar -C $$STAGING_DIR -czf bin/obi-$(RELEASE_VERSION)-$(GOOS)-$(GOARCH).tar.gz $(BIN_NAME) LICENSE NOTICE NOTICES
 
 .PHONY: release
 release: artifact
@@ -683,7 +688,7 @@ release: artifact
 	@echo "Verifying obi-$(RELEASE_VERSION)-$(GOOS)-$(GOARCH).tar.gz..."
 	@mkdir -p $(RELEASE_DIR)/verify-$(GOARCH)
 	@tar -xzf $(RELEASE_DIR)/obi-$(RELEASE_VERSION)-$(GOOS)-$(GOARCH).tar.gz -C $(RELEASE_DIR)/verify-$(GOARCH)
-	@if [ ! -f $(RELEASE_DIR)/verify-$(GOARCH)/$(CMD) ]; then echo "ERROR: $(CMD) binary missing in $(GOARCH) archive"; exit 1; fi
+	@if [ ! -f $(RELEASE_DIR)/verify-$(GOARCH)/$(BIN_NAME) ]; then echo "ERROR: $(BIN_NAME) binary missing in $(GOARCH) archive"; exit 1; fi
 	@if [ ! -f $(RELEASE_DIR)/verify-$(GOARCH)/LICENSE ]; then echo "ERROR: LICENSE missing in $(GOARCH) archive"; exit 1; fi
 	@if [ ! -f $(RELEASE_DIR)/verify-$(GOARCH)/NOTICE ]; then echo "ERROR: NOTICE missing in $(GOARCH) archive"; exit 1; fi
 	@if [ ! -d $(RELEASE_DIR)/verify-$(GOARCH)/NOTICES ]; then echo "ERROR: NOTICES directory missing in $(GOARCH) archive"; exit 1; fi
@@ -692,7 +697,7 @@ release: artifact
 			echo "ERROR: NOTICES/$$other leaked into $(GOARCH) archive"; exit 1; \
 		fi; \
 	done
-	@if [ ! -x $(RELEASE_DIR)/verify-$(GOARCH)/$(CMD) ]; then echo "ERROR: $(CMD) binary not executable in $(GOARCH) archive"; exit 1; fi
+	@if [ ! -x $(RELEASE_DIR)/verify-$(GOARCH)/$(BIN_NAME) ]; then echo "ERROR: $(BIN_NAME) binary not executable in $(GOARCH) archive"; exit 1; fi
 	@echo "✓ Archive $(GOARCH) verified successfully"
 	@rm -rf $(RELEASE_DIR)/verify-$(GOARCH)
 	@$(MAKE) release-checksums
